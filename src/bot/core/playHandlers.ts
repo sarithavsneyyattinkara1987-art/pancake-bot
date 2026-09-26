@@ -11,6 +11,7 @@ import { MCReader } from "../protocol/primitives";
 import { readComponent, readNbt, stripFormatting } from "../protocol/nbt";
 import { readSlot, readSlotList } from "../protocol/slots";
 import type { MinecraftClient } from "./client";
+import type { PlayerInfo } from "./world";
 
 type Handler = (r: MCReader) => void | Promise<void>;
 
@@ -31,7 +32,20 @@ const INFO_LIST_ORDER = 0x80;
 
 export function createPlayHandlers(client: MinecraftClient): Record<string, Handler> {
   const world = client.world;
-  const logger = client.logger;
+  // NOTE: createPlayHandlers() runs as a class-field initializer — *before*
+  // the MinecraftClient constructor body assigns `client.logger`. Capturing
+  // `client.logger` directly would bind every handler to undefined, so the
+  // facade resolves the logger lazily at call time.
+  const logger = {
+    debug: (scope: string, message: string, data?: unknown) =>
+      client.logger.debug(scope, message, data),
+    info: (scope: string, message: string, data?: unknown) =>
+      client.logger.info(scope, message, data),
+    warn: (scope: string, message: string, data?: unknown) =>
+      client.logger.warn(scope, message, data),
+    error: (scope: string, message: string, data?: unknown) =>
+      client.logger.error(scope, message, data),
+  };
 
   const chat = (source: "chat" | "system" | "actionbar" | "title" | "subtitle" | "bossbar" | "dialog", text: string) => {
     const cleaned = stripFormatting(text).trim();
@@ -156,7 +170,7 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
       const saturation = r.f32();
       world.setHealth(health, food, saturation);
       client.emit("health", { health, food, saturation });
-      if (health <= 0) client.emit("death", {});
+      if (health <= 0) client.emit("death");
     },
 
     respawn: (r) => {
@@ -189,7 +203,7 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
         }
         logger.info("world", `Dimension change ${previousDimension} -> ${name}; chunk cache reset.`);
       }
-      client.emit("respawn", {});
+      client.emit("respawn");
       client.emit("gameMode", gamemode);
     },
 
@@ -292,7 +306,7 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
         const count = r.varint();
         for (let i = 0; i < count; i++) {
           const uuid = r.uuid();
-          const existing: Record<string, unknown> = world.players.get(uuid) ?? { uuid };
+          const existing: PlayerInfo = world.players.get(uuid) ?? { uuid };
           if (action & INFO_ADD_PLAYER) {
             existing.name = r.string();
             const props = r.varint();
@@ -324,18 +338,16 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
           if (action & INFO_LIST_ORDER) r.varint();
           world.players.set(uuid, existing);
         }
-        client.emit("players", {});
+        client.emit("players");
       } catch (err) {
         logger.warn("protocol", `player_info parse stopped early: ${errText(err)}`);
       }
-    },
-
-    player_remove: (r) => {
+    },      player_remove: (r) => {
       const count = r.varint();
       for (let i = 0; i < count; i++) {
         world.players.delete(r.uuid());
       }
-      client.emit("players", {});
+      client.emit("players");
     },
 
     // -------------------------------------------------------- entities
@@ -377,7 +389,7 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
         name,
         lastSeen: Date.now(),
       });
-      client.emit("entities", {});
+      client.emit("entities");
     },
 
     rel_entity_move: (r) => {
@@ -459,7 +471,7 @@ export function createPlayHandlers(client: MinecraftClient): Record<string, Hand
       const ids: number[] = [];
       for (let i = 0; i < count; i++) ids.push(r.varint());
       world.removeEntities(ids);
-      client.emit("entities", {});
+      client.emit("entities");
     },
 
     entity_velocity: (r) => {

@@ -213,6 +213,25 @@ export class AuthFlow {
 
   /** Observe an opened container window (possible login GUI). */
   observeWindow(window: WindowSummary): AuthAction[] {
+    const now = this.now();
+    if (this.terminal()) {
+      this.stateValue.guiWindow = window;
+      return [];
+    }
+    // Never fire a second submission while one is in flight.
+    if (
+      this.stateValue.status === "submitting" ||
+      (this.stateValue.status === "submitted" && now - (this.stateValue.submittedAt ?? 0) < 4000)
+    ) {
+      this.stateValue.guiWindow = window;
+      return [];
+    }
+    if (Object.keys(window.items).length === 0) {
+      // Contents have not arrived yet; decide once slots are known.
+      this.stateValue.guiWindow = window;
+      this.note("window-open", `${window.title} (awaiting contents)`);
+      return [];
+    }
     const titleMatches = GUI_TITLE_RE.test(window.title);
     const itemEntries = Object.entries(window.items);
     const itemMatch = itemEntries.find(([, name]) =>

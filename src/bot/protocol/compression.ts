@@ -12,8 +12,15 @@ export interface ZlibCodec {
   decompress(data: Uint8Array): Promise<Uint8Array>;
 }
 
-function getTransform(format: CompressionFormat, stream: ReadableStream<Uint8Array>) {
-  return stream.pipeThrough(new CompressionStream(format));
+function getTransform(
+  format: CompressionFormat,
+  stream: ReadableStream<Uint8Array>,
+  mode: "compress" | "decompress",
+) {
+  const Ctor = mode === "compress" ? CompressionStream : DecompressionStream;
+  return stream.pipeThrough(
+    new Ctor(format) as unknown as ReadableWritablePair<Uint8Array, Uint8Array>,
+  );
 }
 
 async function streamToBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
@@ -39,7 +46,7 @@ async function streamToBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8A
 export const browserZlib: ZlibCodec = {
   async compress(data: Uint8Array): Promise<Uint8Array> {
     const stream = new Blob([data as unknown as BlobPart]).stream();
-    const piped = getTransform("deflate", stream as ReadableStream<Uint8Array>);
+    const piped = getTransform("deflate", stream as ReadableStream<Uint8Array>, "compress");
     return streamToBytes(piped);
   },
   async decompress(data: Uint8Array): Promise<Uint8Array> {
@@ -47,6 +54,7 @@ export const browserZlib: ZlibCodec = {
     const piped = getTransform(
       "deflate",
       stream as unknown as ReadableStream<Uint8Array>,
+      "decompress",
     );
     return streamToBytes(piped);
   },

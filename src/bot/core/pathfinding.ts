@@ -104,7 +104,11 @@ function octile(ax: number, ay: number, az: number, bx: number, by: number, bz: 
   const dx = Math.abs(ax - bx);
   const dz = Math.abs(az - bz);
   const dy = Math.abs(ay - by);
-  return Math.max(dx, dz) + 0.4142 * Math.min(dx, dz) + dy;
+  // Vertical distance costs the *cheapest* legal move: falling adds only 0.4
+  // per block (a jump adds 0.5). Counting dy as a full 1 would overestimate
+  // paths that fall, making the heuristic inadmissible and A* return
+  // suboptimal detours instead of shorter jump/fall routes.
+  return Math.max(dx, dz) + 0.4142 * Math.min(dx, dz) + 0.4 * dy;
 }
 
 export function createWorldView(

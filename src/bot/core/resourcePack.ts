@@ -272,7 +272,8 @@ export class ResourcePackHandler {
       };
     }
 
-    this.stateValue.downloadedBytes = download.bytes.byteLength;
+    const packBytes = download.bytes ?? new Uint8Array(0);
+    this.stateValue.downloadedBytes = packBytes.byteLength;
     this.stateValue.verified = download.verified;
     this.stateValue.cached = download.cached;
     responses.push(this.respond(request.id, ResourcePackStatus.DOWNLOADED, "download verified"));
@@ -281,7 +282,7 @@ export class ResourcePackHandler {
     );
     this.stateValue.phase = "loaded";
     this.stateValue.responses = responses;
-    this.note("loaded", `${download.bytes.byteLength} bytes`);
+    this.note("loaded", `${packBytes.byteLength} bytes`);
     return { ok: true, fatal: false, responses };
   }
 

@@ -317,12 +317,12 @@ export const REGISTRY_774: ProtocolRegistry = {
   },
   play: { toClient: PLAY_TO_CLIENT, toServer: PLAY_TO_SERVER },
   idFor(phase, direction, name) {
-    const table = tableFor(this, phase, direction);
-    if (!table) return null;
     if (phase === "handshake") {
       const entry = Object.entries(this.handshake).find(([, n]) => n === name);
       return entry ? Number(entry[0]) : null;
     }
+    const table = tableFor(this, phase, direction);
+    if (!table) return null;
     const idx = table.indexOf(name);
     return idx >= 0 ? idx : null;
   },

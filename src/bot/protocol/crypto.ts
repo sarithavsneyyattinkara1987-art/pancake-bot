@@ -117,27 +117,34 @@ function mixColumns(state: Uint8Array): void {
 }
 
 /**
- * Stateful AES-128 CFB8 cipher. CFB uses the same function for both
- * directions, so one class drives encryption and decryption of the channel.
+ * Stateful AES-128 CFB8 cipher.
+ *
+ * CFB uses the same keystream function for both directions, but the shift
+ * register always holds *ciphertext* bytes: while encrypting that is the byte
+ * we just produced, while decrypting it is the byte we just consumed. The
+ * direction must therefore be given explicitly — getting it wrong decrypts
+ * only the first byte correctly and then diverges.
  */
 export class AesCfb8 {
   private readonly roundKeys: Uint8Array;
   private readonly register: Uint8Array;
+  private readonly decrypting: boolean;
 
-  constructor(key: Uint8Array, iv: Uint8Array) {
+  constructor(key: Uint8Array, iv: Uint8Array, direction: "encrypt" | "decrypt") {
     if (iv.byteLength !== 16) throw new Error("CFB8 IV must be 16 bytes");
     this.roundKeys = expandKey128(key);
     this.register = Uint8Array.from(iv);
+    this.decrypting = direction === "decrypt";
   }
 
   process(data: Uint8Array): Uint8Array {
     const out = new Uint8Array(data.byteLength);
     for (let i = 0; i < data.byteLength; i++) {
       const keystream = aes128EncryptBlock(this.roundKeys, this.register)[0];
-      const cipherByte = data[i] ^ keystream;
-      out[i] = cipherByte;
+      const outByte = data[i] ^ keystream;
+      out[i] = outByte;
       this.register.copyWithin(0, 1);
-      this.register[15] = cipherByte;
+      this.register[15] = this.decrypting ? data[i] : outByte;
     }
     return out;
   }
@@ -199,8 +206,7 @@ function readDerLen(bytes: Uint8Array, c: Cursor): number {
 export function parseRsaPublicKey(der: Uint8Array): RsaPublicKey {
   const c: Cursor = { i: 0 };
   expectTag(der, c, 0x30); // SPKI SEQUENCE
-  expectTag(der, c, 0x30); // AlgorithmIdentifier SEQUENCE
-  const algLen = readDerLen(der, c);
+  const algLen = expectTag(der, c, 0x30); // AlgorithmIdentifier SEQUENCE
   c.i += algLen; // skip OID + NULL (rsaEncryption)
   const bitLen = expectTag(der, c, 0x03); // BIT STRING
   const unused = der[c.i++];
@@ -208,8 +214,7 @@ export function parseRsaPublicKey(der: Uint8Array): RsaPublicKey {
   const key = der.subarray(c.i, c.i + bitLen - 1);
 
   const k: Cursor = { i: 0 };
-  expectTag(key, k, 0x30); // RSAPublicKey SEQUENCE
-  readDerLen(key, k);
+  expectTag(key, k, 0x30); // RSAPublicKey SEQUENCE (length consumed by expectTag)
   const nLen = expectTag(key, k, 0x02);
   const n = bytesToBigInt(key.subarray(k.i, k.i + nLen));
   k.i += nLen;
@@ -291,8 +296,12 @@ export function fromHex(hex: string): Uint8Array {
 }
 
 /**
- * Minecraft serverId hash used by the Encryption Response: a digest with the
- * high bit set is prefixed with 0x00 so the server sees a non-negative value.
+ * Minecraft serverId hash used by the Encryption Response.
+ *
+ * Per the protocol spec the SHA-1 of (serverId + sharedSecret + publicKey)
+ * is treated as one big two's-complement integer and printed in base 16 —
+ * i.e. Java's `new BigInteger(digest).toString(16)`, which yields a
+ * minus-signed string when the high bit of the digest is set.
  */
 export async function computeServerHash(
   serverId: string,
@@ -308,10 +317,7 @@ export async function computeServerHash(
   off += sharedSecret.byteLength;
   joined.set(publicKeySpki, off);
   const hash = await sha1(joined);
-  if (hash[0] & 0x80) {
-    const prefixed = new Uint8Array(21);
-    prefixed.set(hash, 1);
-    return toHex(await sha1(prefixed));
-  }
-  return toHex(hash);
+  const unsigned = bytesToBigInt(hash);
+  const signed = (hash[0] & 0x80) !== 0 ? unsigned - (1n << BigInt(hash.byteLength * 8)) : unsigned;
+  return signed.toString(16);
 }

@@ -23,7 +23,7 @@ import {
 } from "../protocol/registry";
 import { PacketFramer, decodeFrame, encodeFrame, type FrameCodec } from "../protocol/framing";
 import { browserZlib, type ZlibCodec } from "../protocol/compression";
-import { readComponent, readNbt, stripFormatting, nbtToText } from "../protocol/nbt";
+import { readComponent, readNbt, stripFormatting, nbtToText, type NbtValue } from "../protocol/nbt";
 import { AesCfb8, randomBytes, rsaPkcs1v15Encrypt, computeServerHash } from "../protocol/crypto";
 import { parseChunkPacket } from "../protocol/chunk";
 import { readSlotList } from "../protocol/slots";
@@ -65,7 +65,7 @@ export interface ClientEventMap {
   disconnect: (info: { reason: string; byServer: boolean }) => void;
   error: (info: { context: string; message: string }) => void;
   chat: (info: { source: ChatLine["source"]; text: string }) => void;
-  health: () => void;
+  health: (info: { health: number; food: number; saturation: number }) => void;
   death: () => void;
   respawn: () => void;
   teleport: (info: { id: number; x: number; y: number; z: number; yaw: number; pitch: number }) => void;
@@ -83,7 +83,7 @@ export interface ClientEventMap {
   entities: () => void;
   gameMode: (mode: number) => void;
   keepAlive: (rttMs: number) => void;
-  packet: (info: { phase: Phase; direction: "in" | "out"; name: string; bytes: number }) => void;
+  packet: (info: { phase: ConnectionPhase; direction: "in" | "out"; name: string; bytes: number }) => void;
 }
 
 type Listener<K extends keyof ClientEventMap> = ClientEventMap[K];
@@ -127,6 +127,8 @@ export class MinecraftClient {
 
   private status: ServerStatus | null;
   private statusSettled = false;
+  /** Set while a status ping owns the transport; its close is intentional. */
+  private benignClose = false;
   private connectSettled = false;
   private finishConfigurationReceived = false;
   private packBarrierActive = false;
@@ -308,7 +310,11 @@ export class MinecraftClient {
     }
   }
 
-  private resolveHandler(phase: ConnectionPhase, name: string, id: number) {
+  private resolveHandler(
+    phase: ConnectionPhase,
+    name: string,
+    id: number,
+  ): ((r: MCReader, name: string) => void | Promise<void>) | undefined {
     switch (phase) {
       case "status":
         return this.statusHandlers[name];
@@ -346,6 +352,10 @@ export class MinecraftClient {
   private async runStatusPing(): Promise<ServerStatus | null> {
     this.setPhase("status");
     this.statusSettled = false;
+    // Every close until this ping settles (including a server that drops us)
+    // is part of the status exchange: it must not surface as a disconnect or
+    // leak closedReason into the login phase that follows.
+    this.benignClose = true;
     const started = this.now();
     try {
       await this.transport.connect();
@@ -354,11 +364,16 @@ export class MinecraftClient {
       this.setPhase("idle");
       return null;
     }
-    this.sendStatus("set_protocol", P.buildHandshake(this.registry.protocolVersion, this.config.host, this.config.port, 1));
+    this.send("handshake", "toServer", "set_protocol", P.buildHandshake(this.registry.protocolVersion, this.config.host, this.config.port, 1));
     this.sendStatus("ping_start", P.buildStatusRequest());
 
     const timeout = this.config.timeouts.statusMs;
-    const status = await this.waitUntil(() => this.status, timeout, "status response");
+    const got = await this.waitUntil(
+      () => this.statusSettled || this.closedReason !== null,
+      timeout,
+      "status response",
+    );
+    const status = got ? this.status : null;
     if (!status) {
       this.logger.warn("status", `No status response within ${timeout}ms — cannot auto-detect version.`);
       this.transport.close("status timeout");
@@ -381,21 +396,21 @@ export class MinecraftClient {
 
     // Version negotiation.
     if (this.config.versionMode === "auto" && !this.status) {
-      await this.detectStatus();
-      if (this.status) {
-        const detected = this.status.protocol;
+      const detectedStatus = await this.detectStatus();
+      if (detectedStatus) {
+        const detected = detectedStatus.protocol;
         if (detected && detected !== this.config.protocolVersion) {
           this.logger.warn(
             "version",
-            `Detected protocol ${detected} (${this.status.versionName}) differs from configured ` +
+            `Detected protocol ${detected} (${detectedStatus.versionName}) differs from configured ` +
               `${this.config.protocolVersion} (${this.config.versionName}); using detected protocol.`,
           );
           this.config.protocolVersion = detected;
-          if (this.status.versionName) this.config.versionName = this.status.versionName;
+          if (detectedStatus.versionName) this.config.versionName = detectedStatus.versionName;
         } else {
           this.logger.info(
             "version",
-            `Detected protocol ${detected} (${this.status.versionName}) — matches configured target.`,
+            `Detected protocol ${detected} (${detectedStatus.versionName}) — matches configured target.`,
           );
         }
       } else {
@@ -408,6 +423,11 @@ export class MinecraftClient {
     }
 
     this.setPhase("login");
+    // The status connection may have closed between detection and login;
+    // clear any residual close state so waitUntil cannot trip on it.
+    this.closing = false;
+    this.connectSettled = false;
+    this.closedReason = null;
     this.framer.reset();
     try {
       await this.transport.connect();
@@ -425,7 +445,7 @@ export class MinecraftClient {
         `(${this.registry.versionName}), state=login` +
         (this.transport.endpoint !== `${host}:${port}` ? ` via ${this.transport.endpoint}` : ""),
     );
-    this.sendLogin("set_protocol", P.buildHandshake(this.registry.protocolVersion, host, port, 2));
+    this.send("handshake", "toServer", "set_protocol", P.buildHandshake(this.registry.protocolVersion, host, port, 2));
 
     const uuid = offlineUuid(this.config.credentials.username);
     this.logger.info("connection", `Login start as "${this.config.credentials.username}" (offline uuid ${uuid}).`);
@@ -500,6 +520,15 @@ export class MinecraftClient {
   }
 
   private onTransportClose(info: { reason: string; error?: boolean }): void {
+    if (this.benignClose) {
+      this.benignClose = false;
+      this.closing = false;
+      this.closedReason = null;
+      this.connectSettled = false;
+      if (this.phaseValue === "status") this.setPhase("idle");
+      this.logger.debug("connection", `Status exchange finished: ${info.reason}`);
+      return;
+    }
     if (this.closing) return;
     this.closing = true;
     const reason = this.closedReason ?? info.reason ?? "connection closed by transport";
@@ -666,8 +695,8 @@ export class MinecraftClient {
         P.buildEncryptionResponse(encryptedSecret, encryptedToken),
       );
       // From now on both directions are encrypted (AES-128-CFB8, key = IV = secret).
-      this.cipherIn = new AesCfb8(sharedSecret, sharedSecret);
-      this.cipherOut = new AesCfb8(sharedSecret, sharedSecret);
+      this.cipherIn = new AesCfb8(sharedSecret, sharedSecret, "decrypt");
+      this.cipherOut = new AesCfb8(sharedSecret, sharedSecret, "encrypt");
       this.logger.info(
         "encryption",
         `Encryption channel established (serverId="${serverId}", authenticate=${shouldAuthenticate}).`,
@@ -834,13 +863,14 @@ export class MinecraftClient {
     if (!this.finishConfigurationReceived || this.packBarrierActive) return;
     this.sendConfiguration("finish_configuration", P.buildFinishConfiguration());
     this.setPhase("play");
+    this.connectSettled = true; // login + configuration completed successfully
     this.logger.info("connection", "Entered PLAY state.");
     // world setup happens in the play `login` handler
   }
 
   // ------------------------------------------------------- resource packs
 
-  private async handleResourcePackPush(r: MCReader, source: "configuration" | "play"): Promise<void> {
+  async handleResourcePackPush(r: MCReader, source: "configuration" | "play"): Promise<void> {
     const id = r.uuid();
     const url = r.string();
     const hash = r.string();
@@ -962,8 +992,8 @@ function safeComponent(r: MCReader): string {
   }
 }
 
-function numberOf(value: { value?: unknown } | undefined): number | null {
-  if (!value) return null;
+function numberOf(value: NbtValue | undefined): number | null {
+  if (!value || !("value" in value)) return null;
   const raw = value.value;
   if (typeof raw === "number") return raw;
   if (typeof raw === "bigint") return Number(raw);

@@ -21,33 +21,33 @@ const textDecoder = new TextDecoder("utf-8", { fatal: false });
 export const MAX_STRING_LENGTH = 32767;
 
 export class MCReader {
-  readonly bytes: Uint8Array;
+  readonly data: Uint8Array;
   private readonly view: DataView;
   offset = 0;
 
   constructor(bytes: Uint8Array, offset = 0) {
-    this.bytes = bytes;
+    this.data = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.offset = offset;
   }
 
   get remaining(): number {
-    return this.bytes.byteLength - this.offset;
+    return this.data.byteLength - this.offset;
   }
 
   atEnd(): boolean {
-    return this.offset >= this.bytes.byteLength;
+    return this.offset >= this.data.byteLength;
   }
 
   fail(message: string): never {
     throw new PacketError(message, {
       offset: this.offset,
-      length: this.bytes.byteLength,
+      length: this.data.byteLength,
     });
   }
 
   private need(n: number, what: string): void {
-    if (this.offset + n > this.bytes.byteLength) {
+    if (this.offset + n > this.data.byteLength) {
       this.fail(`Unexpected end of packet while reading ${what}`);
     }
   }
@@ -59,7 +59,7 @@ export class MCReader {
 
   u8(): number {
     this.need(1, "byte");
-    return this.bytes[this.offset++];
+    return this.data[this.offset++];
   }
 
   i8(): number {
@@ -126,7 +126,7 @@ export class MCReader {
     let shift = 0;
     for (let i = 0; i < 5; i++) {
       this.need(1, "varint");
-      const b = this.bytes[this.offset++];
+      const b = this.data[this.offset++];
       result |= (b & 0x7f) << shift;
       if ((b & 0x80) === 0) {
         // Varints are unsigned 32-bit; re-interpret negative results.
@@ -143,7 +143,7 @@ export class MCReader {
     let shift = 0n;
     for (let i = 0; i < 10; i++) {
       this.need(1, "varlong");
-      const b = BigInt(this.bytes[this.offset++]);
+      const b = BigInt(this.data[this.offset++]);
       result |= (b & 0x7fn) << shift;
       if ((b & 0x80n) === 0n) break;
       shift += 7n;
@@ -156,7 +156,7 @@ export class MCReader {
 
   bytes(n: number): Uint8Array {
     this.need(n, `${n} bytes`);
-    const out = this.bytes.subarray(this.offset, this.offset + n);
+    const out = this.data.subarray(this.offset, this.offset + n);
     this.offset += n;
     return out;
   }

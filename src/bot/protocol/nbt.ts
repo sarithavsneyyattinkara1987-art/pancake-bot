@@ -125,7 +125,7 @@ export function skipNbt(r: MCReader): void {
  */
 export function readComponent(r: MCReader): string {
   if (r.remaining <= 0) return "";
-  const first = r.bytes[r.offset];
+  const first = r.data[r.offset];
   if (first === 0x0a /* compound */ || first === 0x08 /* string tag */ || first === 0x09) {
     try {
       return nbtToText(readNbt(r));
