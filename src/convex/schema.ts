@@ -34,6 +34,33 @@ const schema = defineSchema(
 
     // add other tables here
 
+    // Per-user bot configuration. The password itself is never stored — only
+    // whether one is configured — so the dashboard can never leak it.
+    botSettings: defineTable({
+      userId: v.id("users"),
+      username: v.string(),
+      hasPassword: v.boolean(),
+      loginCommand: v.string(),
+      registerCommand: v.string(),
+      resourcePackPolicy: v.string(),
+      antiIdle: v.boolean(),
+      reconnectEnabled: v.boolean(),
+      reconnectMaxAttempts: v.number(),
+      updateSeq: v.number(),
+    })
+      .index("by_user", ["userId"]),
+
+    // Rolling per-user dashboard log of significant bot events (session
+    // lifecycle, auth results, pack decisions). Debug noise stays client-side.
+    botEvents: defineTable({
+      userId: v.id("users"),
+      at: v.number(),
+      level: v.string(),
+      scope: v.string(),
+      message: v.string(),
+    })
+      .index("by_user_time", ["userId", "at"]),
+
     // tableName: defineTable({
     //   ...
     //   // table fields

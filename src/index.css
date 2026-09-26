@@ -42,43 +42,102 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* CHANGE VALUES FOR THEME */
+/* CHANGE VALUES FOR THEME — "terminal & pancakes" theme:
+   deep charcoal-green surfaces, grass-green primary, warm pancake-gold accents,
+   used across both light and dark mode so the bot console always feels like a
+   midnight Termux session. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: oklch(0.96 0.012 130);
+  --foreground: oklch(0.22 0.03 145);
+  --card: oklch(0.99 0.006 130);
+  --card-foreground: oklch(0.22 0.03 145);
+  --popover: oklch(0.99 0.006 130);
+  --popover-foreground: oklch(0.22 0.03 145);
+  --primary: oklch(0.55 0.17 145);
+  --primary-foreground: oklch(0.985 0.01 120);
+  --secondary: oklch(0.92 0.02 130);
+  --secondary-foreground: oklch(0.28 0.04 145);
+  --muted: oklch(0.93 0.015 130);
+  --muted-foreground: oklch(0.5 0.03 145);
+  --accent: oklch(0.94 0.03 95);
+  --accent-foreground: oklch(0.3 0.05 80);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --border: oklch(0.87 0.02 145);
+  --input: oklch(0.87 0.02 145);
+  --ring: oklch(0.55 0.17 145);
+  --chart-1: oklch(0.55 0.17 145);
+  --chart-2: oklch(0.8 0.16 85);
+  --chart-3: oklch(0.5 0.12 210);
+  --chart-4: oklch(0.65 0.19 40);
+  --chart-5: oklch(0.45 0.1 300);
+  --sidebar: oklch(0.965 0.01 130);
+  --sidebar-foreground: oklch(0.22 0.03 145);
+  --sidebar-primary: oklch(0.55 0.17 145);
+  --sidebar-primary-foreground: oklch(0.985 0.01 120);
+  --sidebar-accent: oklch(0.92 0.02 130);
+  --sidebar-accent-foreground: oklch(0.28 0.04 145);
+  --sidebar-border: oklch(0.87 0.02 145);
+  --sidebar-ring: oklch(0.55 0.17 145);
 }
 
 .dark {
+  --background: oklch(0.19 0.02 150);
+  --foreground: oklch(0.93 0.02 130);
+  --card: oklch(0.23 0.025 150);
+  --card-foreground: oklch(0.93 0.02 130);
+  --popover: oklch(0.23 0.025 150);
+  --popover-foreground: oklch(0.93 0.02 130);
+  --primary: oklch(0.72 0.19 145);
+  --primary-foreground: oklch(0.18 0.03 150);
+  --secondary: oklch(0.28 0.03 150);
+  --secondary-foreground: oklch(0.93 0.02 130);
+  --muted: oklch(0.27 0.025 150);
+  --muted-foreground: oklch(0.68 0.03 140);
+  --accent: oklch(0.35 0.05 95);
+  --accent-foreground: oklch(0.9 0.08 90);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.93 0.02 130 / 12%);
+  --input: oklch(0.93 0.02 130 / 15%);
+  --ring: oklch(0.72 0.19 145);
+  --chart-1: oklch(0.72 0.19 145);
+  --chart-2: oklch(0.8 0.16 85);
+  --chart-3: oklch(0.6 0.12 210);
+  --chart-4: oklch(0.7 0.17 40);
+  --chart-5: oklch(0.65 0.15 300);
+  --sidebar: oklch(0.21 0.02 150);
+  --sidebar-foreground: oklch(0.93 0.02 130);
+  --sidebar-primary: oklch(0.72 0.19 145);
+  --sidebar-primary-foreground: oklch(0.18 0.03 150);
+  --sidebar-accent: oklch(0.28 0.03 150);
+  --sidebar-accent-foreground: oklch(0.93 0.02 130);
+  --sidebar-border: oklch(0.93 0.02 130 / 12%);
+  --sidebar-ring: oklch(0.72 0.19 145);
+}
+
+/* Pixel-world flourishes for the landing hero. */
+@layer utilities {
+  .mc-pixel-grid {
+    background-image:
+      linear-gradient(to right, oklch(0.93 0.02 130 / 6%) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.93 0.02 130 / 6%) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .dark .mc-pixel-grid {
+    background-image:
+      linear-gradient(to right, oklch(0.93 0.02 130 / 5%) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.93 0.02 130 / 5%) 1px, transparent 1px);
+  }
+  .mc-scanline {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      oklch(0 0 / 2.5%) 0px,
+      oklch(0 0 / 2.5%) 2px,
+      transparent 2px,
+      transparent 4px
+    );
+  }
+}
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
