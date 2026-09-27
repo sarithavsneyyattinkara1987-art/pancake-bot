@@ -29,6 +29,7 @@ import { parseChunkPacket } from "../protocol/chunk";
 import { readSlotList } from "../protocol/slots";
 import * as P from "../protocol/packets";
 import { createPlayHandlers } from "./playHandlers";
+import type { BotConfig } from "./config";
 import type { Transport } from "../transport/transport";
 import type { BotLogger } from "./logger";
 import { WorldState, type Vec3, type WindowState, type ChatLine } from "./world";
@@ -37,7 +38,6 @@ import {
   type ResourcePackRequest,
   type ResourcePackOutcome,
 } from "./resourcePack";
-import type { BotConfig } from "./config";
 import { offlineUuid } from "../protocol/uuid";
 
 export type Phase = "idle" | "status" | "login" | "configuration" | "play";
@@ -846,17 +846,7 @@ export class MinecraftClient {
       this.logger.debug("configuration", "Dialog cleared.");
     },
     show_dialog: (r) => {
-      // 1.21.6+ sends a Dialog (network NBT), not a plain string. Dump the raw
-      // payload first so the real layout is known instead of guessed.
-      const payload = r.remaining > 0 ? r.bytes(r.remaining) : new Uint8Array(0);
-      const hex = Array.from(payload.slice(0, 96), (b) => b.toString(16).padStart(2, "0")).join(" ");
-      this.logger.info("configuration", `show_dialog payload ${payload.length}B: ${hex}`);
-      try {
-        const tag = readNbt(new MCReader(payload));
-        this.logger.info("configuration", `show_dialog nbt=${JSON.stringify(tag).slice(0, 4000)}`);
-      } catch (err) {
-        this.logger.warn("configuration", `show_dialog nbt parse failed: ${errText(err)}`);
-      }
+      this.handleDialog(r);
     },
     code_of_conduct: () => {
       this.logger.info("configuration", "Server sent a code of conduct; accepting.");
@@ -871,6 +861,130 @@ export class MinecraftClient {
     this.connectSettled = true; // login + configuration completed successfully
     this.logger.info("connection", "Entered PLAY state.");
     // world setup happens in the play `login` handler
+  }
+
+  // --------------------------------------------------------------- dialogs
+
+  /**
+   * Server-side GUI (1.21.6+ `show_dialog`).
+   *
+   * The server shows a dialog (`multi_action` with inputs + a custom click
+   * action) and waits for the client to answer it. nLogin, for example, asks
+   * for a password through a `password1`/`password2` dialog and gates
+   * configuration completion on the answer.
+   *
+   * The bot answers with `custom_click_action` filling the dialog's inputs
+   * from its configured password — the same place the login/register secrets
+   * already live — so dialog-based auth works exactly like chat/GUI auth
+   * elsewhere in the engine.
+   */
+  private handleDialog(r: MCReader): void {
+    const dialog = readNbt(r);
+    const compound = dialog.type === "compound" ? dialog.value : undefined;
+    if (!compound) {
+      this.logger.warn("dialog", "Ignoring malformed show_dialog.");
+      return;
+    }
+
+        const type = (compound.type?.type === "string" ? compound.type.value : "").toLowerCase();
+    const title = nbtToText(compound.title) ?? "";
+    const body = nbtToText(compound.body) ?? "";
+
+    this.logger.info(
+      "dialog",
+      `Server opened dialog: ${title ?? ""} — ${body?.slice(0, 120) ?? ""}`,
+    );
+
+    const action = this.dialogAction(compound);
+    if (!action) return;
+
+    const keys = this.dialogInputKeys(compound);
+    const payload = this.dialogPayload(compound, keys);
+    if (payload && Object.values(payload).some((v) => !v)) {
+      this.logger.error(
+        "dialog",
+        "Dialog requires a password configured on the server side (MC_PASSWORD or the dashboard). Aborting dialog submission.",
+      );
+      return;
+    }
+
+    this.sendConfiguration(
+      "custom_click_action",
+      buildCustomClickAction(action.id, payload ?? {}));
+  }
+
+
+  /**
+   * Pick the action the bot should answer, preferring an explicit auth target
+   * (register/login/stick to the grater action) like the chat auth flow.
+   */
+  private dialogAction(compound: Record<string, NbtValue>): {
+    id: string;
+    label: string;
+  } | null {
+    const actions =
+      (compound.actions?.type === "list" ? compound.actions.value : []).map((entry: NbtValue | undefined) => (entry?.type === "compound" ? entry.value : undefined));
+    const exitAction = compound.exit_action?.type === "compound" ? compound.exit_action.value : undefined;
+
+    for (const entry of actions) {
+      const action = entry?.action?.type === "compound" ? entry.action.value : undefined;
+      const label = nbtToText(entry?.label) ?? "";
+      const idValue = action?.id?.type === "string" ? action.id.value : "";
+      const id = idValue.toLowerCase();
+      if (/register|create|login|log in|sign in|continue|confirm|submit|password/i.test(label) || /register|login|create|password|confirm|continue/i.test(id)) {
+        return { id: idValue, label };
+      }
+    }
+    if (exitAction) {
+      const label = nbtToText(exitAction?.label) ?? "";
+      const idValue = exitAction?.action?.type === "compound" ? exitAction.action.value.id?.type === "string" ? exitAction.action.value.id.value : "" : "";
+      const id = idValue.toLowerCase();
+      if (id.includes("exit")) return { id, label };
+    }
+    return null;
+  }
+
+  /**
+   * Collect the dialog's input keys so the bot can fill them with the
+   * configured password. Only lightweight text inputs are supported; a dialog
+   * that asks for anything else keeps the bot from burning secrets.
+   */
+  private dialogInputKeys(compound: Record<string, NbtValue>): Record<string, string> {
+    const keys: Record<string, string> = {};
+    for (const entry of compound.inputs?.value ?? []) {
+      const input = entry?.type === "compound" ? entry.value : undefined;
+      const key = input?.key?.type === "string" ? input.key.value : "";
+      const type = input?.type?.type === "string" ? input.type.value.toLowerCase() : "";
+      if (key && type === "minecraft:text" && input.max_length?.value) {
+        keys[key] = "";
+      }
+    }
+    return keys;
+  }
+
+  /**
+   * Build the NBT payload for the custom click action from the dialog's text
+   * inputs. The values come from the server config (the password), never from
+   * the browser.
+   */
+  private dialogPayload(
+    compound: Record<string, NbtValue>,
+    keys: Record<string, string>,
+  ): Record<string, string> | null {
+    const credentials = this.config.credentials;
+    const password = credentials.password;
+    if (!password) return null;
+
+    for (const entry of compound.inputs?.value ?? []) {
+      const input = entry?.type === "compound" ? entry.value : undefined;
+      const key = input?.key?.type === "string" ? input.key.value : "";
+      if (key && input?.type?.type === "string" && input.type.value.toLowerCase() === "minecraft:text") {
+        // password2 inputs are the same secret as password1 in registration
+        // flows; keys ending in "2" or "confirm" reuse the same value.
+        keys[key] = password;
+      }
+    }
+    return Object.keys(keys).length > 0 ? keys : null;
   }
 
   // ------------------------------------------------------- resource packs
