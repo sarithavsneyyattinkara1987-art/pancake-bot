@@ -910,7 +910,7 @@ export class MinecraftClient {
 
     this.sendConfiguration(
       "custom_click_action",
-      buildCustomClickAction(action.id, payload ?? {}));
+      P.buildCustomClickAction(action.id, payload ?? {}));
   }
 
 
@@ -928,7 +928,7 @@ export class MinecraftClient {
 
     for (const entry of actions) {
       const action = entry?.action?.type === "compound" ? entry.action.value : undefined;
-      const label = nbtToText(entry?.label) ?? "";
+      const label = nbtToText(entry?.label ?? null) ?? "";
       const idValue = action?.id?.type === "string" ? action.id.value : "";
       const id = idValue.toLowerCase();
       if (/register|create|login|log in|sign in|continue|confirm|submit|password/i.test(label) || /register|login|create|password|confirm|continue/i.test(id)) {
@@ -936,7 +936,7 @@ export class MinecraftClient {
       }
     }
     if (exitAction) {
-      const label = nbtToText(exitAction?.label) ?? "";
+      const label = nbtToText(exitAction?.label ?? null) ?? "";
       const idValue = exitAction?.action?.type === "compound" ? exitAction.action.value.id?.type === "string" ? exitAction.action.value.id.value : "" : "";
       const id = idValue.toLowerCase();
       if (id.includes("exit")) return { id, label };
@@ -951,11 +951,13 @@ export class MinecraftClient {
    */
   private dialogInputKeys(compound: Record<string, NbtValue>): Record<string, string> {
     const keys: Record<string, string> = {};
-    for (const entry of compound.inputs?.value ?? []) {
+    const inputs = compound.inputs?.type === "list" ? compound.inputs.value : [];
+    for (const entry of inputs) {
       const input = entry?.type === "compound" ? entry.value : undefined;
       const key = input?.key?.type === "string" ? input.key.value : "";
       const type = input?.type?.type === "string" ? input.type.value.toLowerCase() : "";
-      if (key && type === "minecraft:text" && input.max_length?.value) {
+      const maxLength = input?.max_length;
+      if (key && type === "minecraft:text" && maxLength && maxLength.type !== "end" && maxLength.value) {
         keys[key] = "";
       }
     }
@@ -975,7 +977,8 @@ export class MinecraftClient {
     const password = credentials.password;
     if (!password) return null;
 
-    for (const entry of compound.inputs?.value ?? []) {
+    const inputs = compound.inputs?.type === "list" ? compound.inputs.value : [];
+    for (const entry of inputs) {
       const input = entry?.type === "compound" ? entry.value : undefined;
       const key = input?.key?.type === "string" ? input.key.value : "";
       if (key && input?.type?.type === "string" && input.type.value.toLowerCase() === "minecraft:text") {
