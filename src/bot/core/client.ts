@@ -846,11 +846,16 @@ export class MinecraftClient {
       this.logger.debug("configuration", "Dialog cleared.");
     },
     show_dialog: (r) => {
+      // 1.21.6+ sends a Dialog (network NBT), not a plain string. Dump the raw
+      // payload first so the real layout is known instead of guessed.
+      const payload = r.remaining > 0 ? r.bytes(r.remaining) : new Uint8Array(0);
+      const hex = Array.from(payload.slice(0, 96), (b) => b.toString(16).padStart(2, "0")).join(" ");
+      this.logger.info("configuration", `show_dialog payload ${payload.length}B: ${hex}`);
       try {
-        const id = r.string();
-        this.logger.info("configuration", `Server opened dialog "${id}".`);
+        const tag = readNbt(new MCReader(payload));
+        this.logger.info("configuration", `show_dialog nbt=${JSON.stringify(tag).slice(0, 4000)}`);
       } catch (err) {
-        this.logger.warn("configuration", `Unparsable show_dialog: ${errText(err)}`);
+        this.logger.warn("configuration", `show_dialog nbt parse failed: ${errText(err)}`);
       }
     },
     code_of_conduct: () => {
