@@ -8,6 +8,7 @@ import {
   Coffee,
   Compass,
   Heart,
+  History,
   type LucideIcon,
   Package,
   Play,
@@ -152,6 +153,7 @@ export default function Dashboard() {
   const ensureSettings = useMutation(api.bot.ensureSettings);
   const saveSettings = useMutation(api.bot.saveSettings);
   const clearEvents = useMutation(api.bot.clearEvents);
+  const persistedEvents = useQuery(api.bot.recentEvents);
 
   const bot = getBot();
   const { snapshot } = useBotSnapshot();
@@ -786,9 +788,9 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* CHAT TAIL */}
-        <section>
-          <Card className="border-border/70 shadow-none">
+        {/* CHAT TAIL + PERSISTED ALERTS */}
+        <section className="grid gap-4 lg:grid-cols-3">
+          <Card className="border-border/70 shadow-none lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <PlayCircle className="size-4 text-primary" /> Recent chat
@@ -808,6 +810,40 @@ export default function Dashboard() {
                         {new Date(line.at).toLocaleTimeString()}
                       </span>{" "}
                       <span className="text-primary">{line.source}</span> {line.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="size-4 text-primary" /> Saved alerts
+              </CardTitle>
+              <CardDescription>
+                Warnings and errors stored on the server — they survive reloads.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {persistedEvents === undefined ? (
+                <p className="text-sm text-muted-foreground">Loading saved alerts…</p>
+              ) : persistedEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nothing yet. Warn/error events are recorded here automatically.
+                </p>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto font-mono text-xs">
+                  {persistedEvents.map((event) => (
+                    <p key={event._id} className="break-words">
+                      <span className="text-muted-foreground">
+                        {new Date(event.at).toLocaleTimeString()}
+                      </span>{" "}
+                      <span className={LEVEL_COLORS[event.level] ?? "text-foreground"}>
+                        {event.scope}/{event.level[0]}
+                      </span>{" "}
+                      {event.message}
                     </p>
                   ))}
                 </div>
